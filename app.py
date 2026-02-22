@@ -4,16 +4,15 @@ import pandas as pd
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
-import joblib
 import plotly.express as px
+import joblib
 
 # -----------------------------
 # Configuration page
 # -----------------------------
 st.set_page_config(
-    page_title=" Détection Fraude Credit Bancaire",
+    page_title="💳 Détection Fraude Credit Bancaire",
     page_icon="🛡️",
-    layout="wide",
     initial_sidebar_state="expanded"
 )
 
@@ -27,11 +26,11 @@ section = st.sidebar.radio("Navigation :", ["Accueil", "Analyse de données", "P
 # Section Accueil
 # -----------------------------
 if section == "Accueil":
-    st.markdown("<h1 style='text-align: center; color: #4B0082;'> Projet Détection de Fraude Credit Bancaire</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center; color: #4B0082;'>💳 Projet Détection de Fraude Credit Bancaire</h1>", unsafe_allow_html=True)
     st.markdown("**Auteur : LUCRECE ATANGANA**")
     st.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=150)
     st.markdown("""
-    Bienvenue sur cette application interactive de détection de fraude aux cartes bancaires.  
+    Bienvenue sur cette application interactive de détection de fraude aux credits bancaires.  
     Explorez les données, visualisez les graphiques et prédisez la probabilité qu'une transaction soit frauduleuse.
     """)
     st.markdown("---")
@@ -41,7 +40,10 @@ if section == "Accueil":
 # -----------------------------
 elif section == "Analyse de données":
     st.markdown("<h2 style='color:#FF8C00;'>📊 Analyse des données</h2>", unsafe_allow_html=True)
-    df = pd.read_csv("creditcard.csv")
+    
+    # Charger dataset depuis une URL en ligne
+    url = "https://raw.githubusercontent.com/ton_username/ton_repo/main/creditcard_sample.csv"
+    df = pd.read_csv(url)
     
     st.subheader("Aperçu du dataset")
     st.dataframe(df.head())
@@ -64,7 +66,8 @@ elif section == "Analyse de données":
 # -----------------------------
 elif section == "Prédiction":
     st.markdown("<h2 style='color:#32CD32;'>🤖 Prédiction de fraude</h2>", unsafe_allow_html=True)
-    
+    st.markdown("Entrez les caractéristiques de la transaction dans la sidebar et cliquez sur **Prédire**.")
+
     # Charger modèles et scaler
     rf_model = joblib.load("credit_rf.pkl")
     gb_model = joblib.load("credit_gb.pkl")  # optionnel
@@ -72,7 +75,9 @@ elif section == "Prédiction":
 
     st.sidebar.header("Entrer les caractéristiques")
 
-    # Sidebar en colonnes
+    # -----------------------------
+    # Sidebar pour 28 features + Montant
+    # -----------------------------
     num_features = 28
     input_values = []
     cols = st.sidebar.columns(3)
@@ -83,24 +88,30 @@ elif section == "Prédiction":
     amount = st.sidebar.number_input("Montant", value=0.0, step=0.01)
     input_values.append(amount)
 
+    # -----------------------------
     # Bouton Prédire
+    # -----------------------------
     if st.sidebar.button("Prédire"):
-        # Assurer compatibilité avec le scaler
-        features_names = scaler.feature_names_in_
-        input_df = pd.DataFrame([input_values], columns=features_names)
+        # Charger dataset depuis URL pour récupérer les colonnes exactes
+        url = "https://raw.githubusercontent.com/ton_username/ton_repo/main/creditcard_sample.csv"
+        df = pd.read_csv(url)
+        feature_cols = df.drop("Class", axis=1).columns
+
+        # Créer DataFrame pour scaler
+        input_df = pd.DataFrame([input_values], columns=feature_cols)
         input_scaled = scaler.transform(input_df)
 
-        # Prédiction
+        # Prédiction Random Forest
         prediction = rf_model.predict(input_scaled)[0]
         proba = rf_model.predict_proba(input_scaled)[0][1]
 
-        # Résultat
+        # Affichage du résultat
         if prediction == 1:
             st.markdown(f"<h3 style='color:red;'>🚨 Transaction suspecte ! Probabilité : {proba:.2%}</h3>", unsafe_allow_html=True)
         else:
             st.markdown(f"<h3 style='color:green;'>✅ Transaction normale. Probabilité : {proba:.2%}</h3>", unsafe_allow_html=True)
 
-        # Jauge interactive avec Plotly
+        # Jauge circulaire interactive
         fig_gauge = px.pie(
             names=["Fraude", "Normale"],
             values=[proba, 1-proba],
