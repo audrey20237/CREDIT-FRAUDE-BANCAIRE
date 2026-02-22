@@ -79,18 +79,30 @@ elif section == "Prédiction":
     st.markdown("Entrez les caractéristiques de la transaction dans la sidebar et cliquez sur **Prédire**.")
 
     # Charger modèles et scaler
-    rf_model = joblib.load("credit_rf.pkl")
-    gb_model = joblib.load("credit_gb.pkl")  # optionnel
-    scaler = joblib.load("scaler.pkl")
-
-    st.sidebar.header("Entrer les caractéristiques")
+    try:
+        rf_model = joblib.load("credit_rf.pkl")
+    except FileNotFoundError:
+        st.error("Le fichier credit_rf.pkl est introuvable.")
+        st.stop()
+        
+    try:
+        gb_model = joblib.load("credit_gb.pkl")
+    except FileNotFoundError:
+        gb_model = None  # modèle optionnel
+        
+    try:
+        scaler = joblib.load("scaler.pkl")
+    except FileNotFoundError:
+        st.error("Le fichier scaler.pkl est introuvable.")
+        st.stop()
 
     # Sidebar pour 28 features + Montant
+    st.sidebar.header("Entrer les caractéristiques")
     num_features = 28
     input_values = []
     cols = st.sidebar.columns(3)
-    for i in range(1, num_features+1):
-        col = cols[i % 3]
+    for i in range(1, num_features + 1):
+        col = cols[(i-1) % 3]  # correction indexation
         val = col.number_input(f"V{i}", value=0.0, step=0.01, format="%.5f")
         input_values.append(val)
     amount = st.sidebar.number_input("Montant", value=0.0, step=0.01)
@@ -98,33 +110,46 @@ elif section == "Prédiction":
 
     # Bouton Prédire
     if st.sidebar.button("Prédire"):
-        # Créer DataFrame pour scaler
-        input_df = pd.DataFrame([input_values], columns=scaler.feature_names_in_)
+        # Créer DataFrame avec colonnes explicites
+        column_names = [f"V{i}" for i in range(1, 29)] + ["Amount"]
+        input_df = pd.DataFrame([input_values], columns=column_names)
         input_scaled = scaler.transform(input_df)
-        
+
         # Prédiction Random Forest
         prediction = rf_model.predict(input_scaled)[0]
-        proba = rf_model.predict_proba(input_scaled)[0][1]
-        
+        try:
+            proba = rf_model.predict_proba(input_scaled)[0][1]
+        except AttributeError:
+            proba = None
+
         # Affichage du résultat
         if prediction == 1:
-            st.markdown(f"<h3 style='color:red;'>🚨 Transaction suspecte ! Probabilité : {proba:.2%}</h3>", unsafe_allow_html=True)
+            st.markdown(
+                f"<h3 style='color:red;'>🚨 Transaction suspecte ! Probabilité : "
+                f"{proba:.2%}" if proba is not None else "🚨 Transaction suspecte !</h3>",
+                unsafe_allow_html=True
+            )
         else:
-            st.markdown(f"<h3 style='color:green;'>✅ Transaction normale. Probabilité : {proba:.2%}</h3>", unsafe_allow_html=True)
-        
+            st.markdown(
+                f"<h3 style='color:green;'>✅ Transaction normale. Probabilité : "
+                f"{proba:.2%}" if proba is not None else "✅ Transaction normale.</h3>",
+                unsafe_allow_html=True
+            )
+
         # Jauge circulaire interactive
-        fig_gauge = px.pie(
-            names=["Fraude", "Normale"],
-            values=[proba, 1-proba],
-            color_discrete_sequence=["red","green"],
-            hole=0.6
-        )
-        fig_gauge.update_layout(
-            showlegend=True,
-            title_text="Probabilité de fraude",
-            annotations=[dict(text=f"{proba:.1%}", x=0.5, y=0.5, font_size=20, showarrow=False)]
-        )
-        st.plotly_chart(fig_gauge, use_container_width=True)
+        if proba is not None:
+            fig_gauge = px.pie(
+                names=["Fraude", "Normale"],
+                values=[proba, 1-proba],
+                color_discrete_sequence=["red", "green"],
+                hole=0.6
+            )
+            fig_gauge.update_layout(
+                showlegend=True,
+                title_text="Probabilité de fraude",
+                annotations=[dict(text=f"{proba:.1%}", x=0.5, y=0.5, font_size=20, showarrow=False)]
+            )
+            st.plotly_chart(fig_gauge, use_container_width=True)
 
 # -----------------------------
 # Section Évaluation des modèles
@@ -132,29 +157,33 @@ elif section == "Prédiction":
 elif section == "Évaluation":
     st.markdown("<h2 style='color:#800080;'>📈 Évaluation des modèles</h2>", unsafe_allow_html=True)
 
+    # Charger modèle et scaler
+    try:
+        rf_model = joblib.load("credit_rf.pkl")
+    except FileNotFoundError:
+        st.error("Le fichier credit_rf.pkl est introuvable.")
+        st.stop()
+        
+    try:
+        gb_model = joblib.load("credit_gb.pkl")
+    except FileNotFoundError:
+        gb_model = None
+        
+    try:
+        scaler = joblib.load("scaler.pkl")
+    except FileNotFoundError:
+        st.error("Le fichier scaler.pkl est introuvable.")
+        st.stop()
+
     # Charger dataset complet ou échantillon
     df_eval = pd.read_csv("creditcard_sample.csv")
     X_eval = df_eval.drop("Class", axis=1)
     y_eval = df_eval["Class"]
-    
+
     # Normalisation
     X_scaled = scaler.transform(X_eval)
-    
+
     # Prédiction modèles
     y_pred_rf = rf_model.predict(X_scaled)
-    y_pred_gb = gb_model.predict(X_scaled)
-
-    # Metrics Random Forest
-    st.subheader("Random Forest")
-    st.text(f"Accuracy : {accuracy_score(y_eval, y_pred_rf):.3f}")
-    st.text(f"F1-score : {f1_score(y_eval, y_pred_rf):.3f}")
-    st.text(f"ROC-AUC : {roc_auc_score(y_eval, rf_model.predict_proba(X_scaled)[:,1]):.3f}")
-    st.text("Classification Report :\n" + classification_report(y_eval, y_pred_rf))
-    
-    # Metrics Gradient Boosting
-    st.subheader("Gradient Boosting")
-    st.text(f"Accuracy : {accuracy_score(y_eval, y_pred_gb):.3f}")
-    st.text(f"F1-score : {f1_score(y_eval, y_pred_gb):.3f}")
-    st.text(f"ROC-AUC : {roc_auc_score(y_eval, gb_model.predict_proba(X_scaled)[:,1]):.3f}")
-    st.text("Classification Report :\n" + classification_report(y_eval, y_pred_gb))
-
+    if gb_model is not None:
+        y_pred_gb = gb_model.predict(X_scaled)
