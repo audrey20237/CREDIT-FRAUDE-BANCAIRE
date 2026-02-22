@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import plotly.express as px
 import joblib
 from sklearn.metrics import classification_report, confusion_matrix, f1_score, roc_auc_score, accuracy_score
+from sklearn.metrics import roc_curve
 
 # -----------------------------
 # Configuration page
@@ -76,9 +77,11 @@ elif section == "Analyse de données":
 # -----------------------------
 elif section == "Prédiction":
     st.markdown("<h2 style='color:#32CD32;'>🤖 Prédiction de fraude</h2>", unsafe_allow_html=True)
-    st.markdown("Entrez les caractéristiques de la transaction dans la sidebar et cliquez sur **Prédire**.")
+    st.markdown("Entrez les caractéristiques de la transaction dans la sidebar puis cliquez sur **Prédire**.")
 
-    # Charger modèles et scaler
+    # -------------------------
+    # Chargement modèles / scaler
+    # -------------------------
     try:
         rf_model = joblib.load("credit_rf.pkl")
     except FileNotFoundError:
@@ -86,78 +89,115 @@ elif section == "Prédiction":
         st.stop()
 
     try:
-        gb_model = joblib.load("credit_gb.pkl")
-    except FileNotFoundError:
-        gb_model = None  # optionnel
-
-    try:
         scaler = joblib.load("scaler.pkl")
     except FileNotFoundError:
         st.error("Le fichier scaler.pkl est introuvable.")
         st.stop()
 
-    # Sidebar pour 28 features + Montant
+    # -------------------------
+    # Déterminer automatiquement les colonnes attendues
+    # -------------------------
+    if hasattr(scaler, "feature_names_in_"):
+        expected_columns = list(scaler.feature_names_in_)
+    else:
+        # fallback sécurisé si le scaler a été entraîné sur numpy array
+        expected_columns = [f"V{i}" for i in range(1, 29)] + ["Amount"]
+
     st.sidebar.header("Entrer les caractéristiques")
-    num_features = 28
-    input_values = []
+
+    # -------------------------
+    # Création dynamique des inputs selon les colonnes attendues
+    # -------------------------
+    input_dict = {}
+
     cols = st.sidebar.columns(3)
-    for i in range(1, num_features + 1):
-        col = cols[(i - 1) % 3]
-        val = col.number_input(f"V{i}", value=0.0, step=0.01, format="%.5f")
-        input_values.append(val)
-    amount = st.sidebar.number_input("Montant", value=0.0, step=0.01)
-    input_values.append(amount)
 
-    # Bouton Prédire
+    for i, col_name in enumerate(expected_columns):
+        col = cols[i % 3]
+
+        # Valeur par défaut intelligente
+        default_value = 0.0
+
+        input_value = col.number_input(
+            label=col_name,
+            value=default_value,
+            step=0.01,
+            format="%.5f"
+        )
+
+        input_dict[col_name] = input_value
+
+    # -------------------------
+    # Section prédiction
+    # -------------------------
     if st.sidebar.button("Prédire"):
-        # Déterminer les colonnes attendues par le scaler
-        if hasattr(scaler, "feature_names_in_"):
-            expected_columns = list(scaler.feature_names_in_)
-        else:
-            expected_columns = [f"V{i}" for i in range(1, 29)] + ["Amount"]
 
-        if len(expected_columns) != len(input_values):
-            st.error("Le nombre de colonnes du scaler ne correspond pas au nombre d'inputs. Vérifie l'ordre des features.")
+        # Création DataFrame aligné automatiquement
+        input_df = pd.DataFrame([input_dict])
+
+        # Sécurisation : réordonner EXACTEMENT comme le scaler
+        input_df = input_df[expected_columns]
+
+        try:
+            input_scaled = scaler.transform(input_df)
+        except Exception as e:
+            st.error("Erreur lors du scaling. Vérifie que les features correspondent au modèle.")
             st.stop()
 
-        # Créer DataFrame et scaler
-        input_df = pd.DataFrame([input_values], columns=expected_columns)
-        input_scaled = scaler.transform(input_df)
-
-        # Prédiction Random Forest
+        # -------------------------
+        # Prédiction
+        # -------------------------
         prediction = rf_model.predict(input_scaled)[0]
+
         try:
             proba = rf_model.predict_proba(input_scaled)[0][1]
-        except AttributeError:
+        except:
             proba = None
 
-        # Affichage du résultat
+        # -------------------------
+        # Affichage résultat
+        # -------------------------
         if prediction == 1:
-            st.markdown(
-                f"<h3 style='color:red;'>🚨 Transaction suspecte ! Probabilité : "
-                f"{proba:.2%}</h3>" if proba is not None else "<h3 style='color:red;'>🚨 Transaction suspecte !</h3>",
-                unsafe_allow_html=True
-            )
+            if proba is not None:
+                st.markdown(
+                    f"<h3 style='color:red;'>🚨 Transaction suspecte ! Probabilité : {proba:.2%}</h3>",
+                    unsafe_allow_html=True
+                )
+            else:
+                st.markdown(
+                    "<h3 style='color:red;'>🚨 Transaction suspecte !</h3>",
+                    unsafe_allow_html=True
+                )
         else:
-            st.markdown(
-                f"<h3 style='color:green;'>✅ Transaction normale. Probabilité : "
-                f"{proba:.2%}</h3>" if proba is not None else "<h3 style='color:green;'>✅ Transaction normale.</h3>",
-                unsafe_allow_html=True
-            )
+            if proba is not None:
+                st.markdown(
+                    f"<h3 style='color:green;'>✅ Transaction normale. Probabilité : {proba:.2%}</h3>",
+                    unsafe_allow_html=True
+                )
+            else:
+                st.markdown(
+                    "<h3 style='color:green;'>✅ Transaction normale.</h3>",
+                    unsafe_allow_html=True
+                )
 
-        # Jauge interactive
+        # -------------------------
+        # Visualisation probabilité
+        # -------------------------
         if proba is not None:
             fig_gauge = px.pie(
                 names=["Fraude", "Normale"],
                 values=[proba, 1 - proba],
-                color_discrete_sequence=["red", "green"],
-                hole=0.6
+                hole=0.6,
+                color_discrete_sequence=["red", "green"]
             )
+
             fig_gauge.update_layout(
-                showlegend=True,
-                title_text="Probabilité de fraude",
-                annotations=[dict(text=f"{proba:.1%}", x=0.5, y=0.5, font_size=20, showarrow=False)]
+                title="Probabilité de fraude",
+                annotations=[
+                    dict(text=f"{proba:.1%}", x=0.5, y=0.5, font_size=22, showarrow=False)
+                ]
             )
+
             st.plotly_chart(fig_gauge, use_container_width=True)
 
 
@@ -227,3 +267,60 @@ elif section == "Évaluation":
             roc_auc_gb = None
         st.text(f"ROC-AUC : {roc_auc_gb:.3f}" if roc_auc_gb is not None else "ROC-AUC : N/A")
         st.text("Classification Report :\n" + classification_report(y_eval, y_pred_gb))
+
+st.subheader("Courbe ROC")
+
+# Probabilités
+y_score_rf = rf_model.predict_proba(X_scaled)[:, 1]
+
+fpr_rf, tpr_rf, _ = roc_curve(y_eval, y_score_rf)
+auc_rf = roc_auc_score(y_eval, y_score_rf)
+
+plt.figure(figsize=(8,6))
+plt.plot(fpr_rf, tpr_rf, label=f"Random Forest (AUC={auc_rf:.3f})")
+
+# Gradient Boosting si disponible
+if gb_model is not None:
+    try:
+        y_score_gb = gb_model.predict_proba(X_scaled)[:, 1]
+        fpr_gb, tpr_gb, _ = roc_curve(y_eval, y_score_gb)
+        auc_gb = roc_auc_score(y_eval, y_score_gb)
+        plt.plot(fpr_gb, tpr_gb, label=f"Gradient Boosting (AUC={auc_gb:.3f})")
+    except:
+        pass
+
+plt.plot([0,1],[0,1],'k--', label="Hasard")
+plt.xlabel("Taux de faux positifs (FPR)")
+plt.ylabel("Taux de vrais positifs (TPR)")
+plt.title("Courbe ROC - Comparaison des modèles")
+plt.legend()
+plt.grid()
+
+st.pyplot(plt)
+
+st.subheader("Importance des variables (Gradient Boosting)")
+
+if gb_model is not None:
+    try:
+        importances = gb_model.feature_importances_
+        
+        # Récupérer noms des features correctement
+        if hasattr(scaler, "feature_names_in_"):
+            features = scaler.feature_names_in_
+        else:
+            features = X_eval.columns
+
+        indices = np.argsort(importances)[::-1]
+
+        plt.figure(figsize=(10,6))
+        sns.barplot(
+            x=importances[indices],
+            y=np.array(features)[indices]
+        )
+        plt.title("Importance des variables - Gradient Boosting")
+        plt.xlabel("Score d'importance")
+        plt.ylabel("Feature")
+
+        st.pyplot(plt)
+    except:
+        st.warning("Impossible d'afficher l'importance des variables.")
