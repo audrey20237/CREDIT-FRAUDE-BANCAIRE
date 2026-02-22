@@ -7,12 +7,22 @@ import matplotlib.pyplot as plt
 import plotly.express as px
 import joblib
 
+# app.py
+import streamlit as st
+import pandas as pd
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+import plotly.express as px
+import joblib
+
 # -----------------------------
 # Configuration page
 # -----------------------------
 st.set_page_config(
-    page_title="💳 Détection Fraude Credit Bancaire",
+    page_title="💳 Détection Fraude Carte Bancaire",
     page_icon="🛡️",
+    layout="wide",
     initial_sidebar_state="expanded"
 )
 
@@ -26,11 +36,11 @@ section = st.sidebar.radio("Navigation :", ["Accueil", "Analyse de données", "P
 # Section Accueil
 # -----------------------------
 if section == "Accueil":
-    st.markdown("<h1 style='text-align: center; color: #4B0082;'>💳 Projet Détection de Fraude Credit Bancaire</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center; color: #4B0082;'>💳 Projet Détection de Fraude Carte Bancaire</h1>", unsafe_allow_html=True)
     st.markdown("**Auteur : LUCRECE ATANGANA**")
     st.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=150)
     st.markdown("""
-    Bienvenue sur cette application interactive de détection de fraude aux credits bancaires.  
+    Bienvenue sur cette application interactive de détection de fraude aux cartes bancaires.  
     Explorez les données, visualisez les graphiques et prédisez la probabilité qu'une transaction soit frauduleuse.
     """)
     st.markdown("---")
@@ -41,7 +51,7 @@ if section == "Accueil":
 elif section == "Analyse de données":
     st.markdown("<h2 style='color:#FF8C00;'>📊 Analyse des données</h2>", unsafe_allow_html=True)
     
-    # Charger dataset depuis une URL en ligne
+    # Charger dataset depuis une URL en ligne (exemple : échantillon public)
     url = "https://raw.githubusercontent.com/ton_username/ton_repo/main/creditcard_sample.csv"
     df = pd.read_csv(url)
     
@@ -92,25 +102,22 @@ elif section == "Prédiction":
     # Bouton Prédire
     # -----------------------------
     if st.sidebar.button("Prédire"):
-        # Charger dataset depuis URL pour récupérer les colonnes exactes
-        url = "https://raw.githubusercontent.com/ton_username/ton_repo/main/creditcard_sample.csv"
-        df = pd.read_csv(url)
-        feature_cols = df.drop("Class", axis=1).columns
-
-        # Créer DataFrame pour scaler
-        input_df = pd.DataFrame([input_values], columns=feature_cols)
+        # Créer DataFrame pour scaler en utilisant les colonnes exactes du scaler
+        input_df = pd.DataFrame([input_values], columns=scaler.feature_names_in_)
+        
+        # Transformer les données
         input_scaled = scaler.transform(input_df)
-
+        
         # Prédiction Random Forest
         prediction = rf_model.predict(input_scaled)[0]
         proba = rf_model.predict_proba(input_scaled)[0][1]
-
+        
         # Affichage du résultat
         if prediction == 1:
             st.markdown(f"<h3 style='color:red;'>🚨 Transaction suspecte ! Probabilité : {proba:.2%}</h3>", unsafe_allow_html=True)
         else:
             st.markdown(f"<h3 style='color:green;'>✅ Transaction normale. Probabilité : {proba:.2%}</h3>", unsafe_allow_html=True)
-
+        
         # Jauge circulaire interactive
         fig_gauge = px.pie(
             names=["Fraude", "Normale"],
