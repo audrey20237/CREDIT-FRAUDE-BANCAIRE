@@ -1,11 +1,3 @@
-# app.py
-import streamlit as st
-import pandas as pd
-import numpy as np
-import seaborn as sns
-import matplotlib.pyplot as plt
-import plotly.express as px
-import joblib
 
 # app.py
 import streamlit as st
@@ -15,6 +7,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import plotly.express as px
 import joblib
+from sklearn.metrics import classification_report, confusion_matrix, f1_score, roc_auc_score, accuracy_score
 
 # -----------------------------
 # Configuration page
@@ -30,7 +23,7 @@ st.set_page_config(
 # Sidebar menu
 # -----------------------------
 st.sidebar.title("Menu")
-section = st.sidebar.radio("Navigation :", ["Accueil", "Analyse de données", "Prédiction"])
+section = st.sidebar.radio("Navigation :", ["Accueil", "Analyse de données", "Prédiction", "Évaluation"])
 
 # -----------------------------
 # Section Accueil
@@ -39,11 +32,19 @@ if section == "Accueil":
     st.markdown("<h1 style='text-align: center; color: #4B0082;'>💳 Projet Détection de Fraude Carte Bancaire</h1>", unsafe_allow_html=True)
     st.markdown("**Auteur : LUCRECE ATANGANA**")
     st.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=150)
+    
+    st.markdown("### Avant-propos")
     st.markdown("""
-    Bienvenue sur cette application interactive de détection de fraude aux cartes bancaires.  
-    Explorez les données, visualisez les graphiques et prédisez la probabilité qu'une transaction soit frauduleuse.
+    Les fraudes aux cartes bancaires représentent un problème majeur pour les institutions financières.
+    Ce projet vise à détecter automatiquement les transactions suspectes grâce à des modèles de Machine Learning.
+    L’application permet à la fois d’explorer les données et de prédire le risque de fraude pour une transaction donnée.
     """)
-    st.markdown("---")
+
+    st.markdown("### Méthodes utilisées")
+    st.markdown("""
+    - **Random Forest** : un ensemble d'arbres de décision pour améliorer la robustesse et la précision.  
+    - **Gradient Boosting** : méthode d’ensemblage qui corrige les erreurs des arbres précédents.  
+    """)
 
 # -----------------------------
 # Section Analyse de données
@@ -51,9 +52,8 @@ if section == "Accueil":
 elif section == "Analyse de données":
     st.markdown("<h2 style='color:#FF8C00;'>📊 Analyse des données</h2>", unsafe_allow_html=True)
     
-    # Charger dataset depuis une URL en ligne (exemple : échantillon public)
-    url = "https://raw.githubusercontent.com/ton_username/ton_repo/main/creditcard_sample.csv"
-    df = pd.read_csv(url)
+    # Charger dataset échantillon local
+    df = pd.read_csv("creditcard_sample.csv")
     
     st.subheader("Aperçu du dataset")
     st.dataframe(df.head())
@@ -85,9 +85,7 @@ elif section == "Prédiction":
 
     st.sidebar.header("Entrer les caractéristiques")
 
-    # -----------------------------
     # Sidebar pour 28 features + Montant
-    # -----------------------------
     num_features = 28
     input_values = []
     cols = st.sidebar.columns(3)
@@ -98,14 +96,10 @@ elif section == "Prédiction":
     amount = st.sidebar.number_input("Montant", value=0.0, step=0.01)
     input_values.append(amount)
 
-    # -----------------------------
     # Bouton Prédire
-    # -----------------------------
     if st.sidebar.button("Prédire"):
-        # Créer DataFrame pour scaler en utilisant les colonnes exactes du scaler
+        # Créer DataFrame pour scaler
         input_df = pd.DataFrame([input_values], columns=scaler.feature_names_in_)
-        
-        # Transformer les données
         input_scaled = scaler.transform(input_df)
         
         # Prédiction Random Forest
@@ -131,3 +125,36 @@ elif section == "Prédiction":
             annotations=[dict(text=f"{proba:.1%}", x=0.5, y=0.5, font_size=20, showarrow=False)]
         )
         st.plotly_chart(fig_gauge, use_container_width=True)
+
+# -----------------------------
+# Section Évaluation des modèles
+# -----------------------------
+elif section == "Évaluation":
+    st.markdown("<h2 style='color:#800080;'>📈 Évaluation des modèles</h2>", unsafe_allow_html=True)
+
+    # Charger dataset complet ou échantillon
+    df_eval = pd.read_csv("creditcard_sample.csv")
+    X_eval = df_eval.drop("Class", axis=1)
+    y_eval = df_eval["Class"]
+    
+    # Normalisation
+    X_scaled = scaler.transform(X_eval)
+    
+    # Prédiction modèles
+    y_pred_rf = rf_model.predict(X_scaled)
+    y_pred_gb = gb_model.predict(X_scaled)
+
+    # Metrics Random Forest
+    st.subheader("Random Forest")
+    st.text(f"Accuracy : {accuracy_score(y_eval, y_pred_rf):.3f}")
+    st.text(f"F1-score : {f1_score(y_eval, y_pred_rf):.3f}")
+    st.text(f"ROC-AUC : {roc_auc_score(y_eval, rf_model.predict_proba(X_scaled)[:,1]):.3f}")
+    st.text("Classification Report :\n" + classification_report(y_eval, y_pred_rf))
+    
+    # Metrics Gradient Boosting
+    st.subheader("Gradient Boosting")
+    st.text(f"Accuracy : {accuracy_score(y_eval, y_pred_gb):.3f}")
+    st.text(f"F1-score : {f1_score(y_eval, y_pred_gb):.3f}")
+    st.text(f"ROC-AUC : {roc_auc_score(y_eval, gb_model.predict_proba(X_scaled)[:,1]):.3f}")
+    st.text("Classification Report :\n" + classification_report(y_eval, y_pred_gb))
+
