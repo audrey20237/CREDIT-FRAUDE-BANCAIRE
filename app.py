@@ -84,12 +84,12 @@ elif section == "Prédiction":
     except FileNotFoundError:
         st.error("Le fichier credit_rf.pkl est introuvable.")
         st.stop()
-        
+
     try:
         gb_model = joblib.load("credit_gb.pkl")
     except FileNotFoundError:
-        gb_model = None  # modèle optionnel
-        
+        gb_model = None  # optionnel
+
     try:
         scaler = joblib.load("scaler.pkl")
     except FileNotFoundError:
@@ -102,7 +102,7 @@ elif section == "Prédiction":
     input_values = []
     cols = st.sidebar.columns(3)
     for i in range(1, num_features + 1):
-        col = cols[(i-1) % 3]  # correction indexation
+        col = cols[(i - 1) % 3]
         val = col.number_input(f"V{i}", value=0.0, step=0.01, format="%.5f")
         input_values.append(val)
     amount = st.sidebar.number_input("Montant", value=0.0, step=0.01)
@@ -110,9 +110,18 @@ elif section == "Prédiction":
 
     # Bouton Prédire
     if st.sidebar.button("Prédire"):
-        # Créer DataFrame avec colonnes explicites
-        column_names = [f"V{i}" for i in range(1, 29)] + ["Amount"]
-        input_df = pd.DataFrame([input_values], columns=column_names)
+        # Déterminer les colonnes attendues par le scaler
+        if hasattr(scaler, "feature_names_in_"):
+            expected_columns = list(scaler.feature_names_in_)
+        else:
+            expected_columns = [f"V{i}" for i in range(1, 29)] + ["Amount"]
+
+        if len(expected_columns) != len(input_values):
+            st.error("Le nombre de colonnes du scaler ne correspond pas au nombre d'inputs. Vérifie l'ordre des features.")
+            st.stop()
+
+        # Créer DataFrame et scaler
+        input_df = pd.DataFrame([input_values], columns=expected_columns)
         input_scaled = scaler.transform(input_df)
 
         # Prédiction Random Forest
@@ -126,21 +135,21 @@ elif section == "Prédiction":
         if prediction == 1:
             st.markdown(
                 f"<h3 style='color:red;'>🚨 Transaction suspecte ! Probabilité : "
-                f"{proba:.2%}" if proba is not None else "🚨 Transaction suspecte !</h3>",
+                f"{proba:.2%}</h3>" if proba is not None else "<h3 style='color:red;'>🚨 Transaction suspecte !</h3>",
                 unsafe_allow_html=True
             )
         else:
             st.markdown(
                 f"<h3 style='color:green;'>✅ Transaction normale. Probabilité : "
-                f"{proba:.2%}" if proba is not None else "✅ Transaction normale.</h3>",
+                f"{proba:.2%}</h3>" if proba is not None else "<h3 style='color:green;'>✅ Transaction normale.</h3>",
                 unsafe_allow_html=True
             )
 
-        # Jauge circulaire interactive
+        # Jauge interactive
         if proba is not None:
             fig_gauge = px.pie(
                 names=["Fraude", "Normale"],
-                values=[proba, 1-proba],
+                values=[proba, 1 - proba],
                 color_discrete_sequence=["red", "green"],
                 hole=0.6
             )
@@ -151,39 +160,70 @@ elif section == "Prédiction":
             )
             st.plotly_chart(fig_gauge, use_container_width=True)
 
+
 # -----------------------------
 # Section Évaluation des modèles
 # -----------------------------
 elif section == "Évaluation":
     st.markdown("<h2 style='color:#800080;'>📈 Évaluation des modèles</h2>", unsafe_allow_html=True)
 
-    # Charger modèle et scaler
+    # Charger modèles et scaler
     try:
         rf_model = joblib.load("credit_rf.pkl")
     except FileNotFoundError:
         st.error("Le fichier credit_rf.pkl est introuvable.")
         st.stop()
-        
+
     try:
         gb_model = joblib.load("credit_gb.pkl")
     except FileNotFoundError:
         gb_model = None
-        
+
     try:
         scaler = joblib.load("scaler.pkl")
     except FileNotFoundError:
         st.error("Le fichier scaler.pkl est introuvable.")
         st.stop()
 
-    # Charger dataset complet ou échantillon
+    # Charger dataset
     df_eval = pd.read_csv("creditcard_sample.csv")
     X_eval = df_eval.drop("Class", axis=1)
     y_eval = df_eval["Class"]
 
+    # Vérifier alignement colonnes scaler
+    if hasattr(scaler, "feature_names_in_"):
+        expected_columns = list(scaler.feature_names_in_)
+        if not all(col in X_eval.columns for col in expected_columns):
+            st.error("Les colonnes du dataset ne correspondent pas à celles du scaler.")
+            st.stop()
+        X_eval = X_eval[expected_columns]
+    else:
+        # supposons que X_eval contient les colonnes correctes
+        pass
+
     # Normalisation
     X_scaled = scaler.transform(X_eval)
 
-    # Prédiction modèles
+    # Prédictions
     y_pred_rf = rf_model.predict(X_scaled)
     if gb_model is not None:
         y_pred_gb = gb_model.predict(X_scaled)
+
+    # Metrics Random Forest
+    st.subheader("Random Forest")
+    st.text(f"Accuracy : {accuracy_score(y_eval, y_pred_rf):.3f}")
+    st.text(f"F1-score : {f1_score(y_eval, y_pred_rf):.3f}")
+    st.text(f"ROC-AUC : {roc_auc_score(y_eval, rf_model.predict_proba(X_scaled)[:,1]):.3f}")
+    st.text("Classification Report :\n" + classification_report(y_eval, y_pred_rf))
+
+    # Metrics Gradient Boosting
+    if gb_model is not None:
+        st.subheader("Gradient Boosting")
+        st.text(f"Accuracy : {accuracy_score(y_eval, y_pred_gb):.3f}")
+        st.text(f"F1-score : {f1_score(y_eval, y_pred_gb):.3f}")
+        try:
+            roc_auc_gb = roc_auc_score(y_eval, gb_model.predict_proba(X_scaled)[:,1])
+        except AttributeError:
+            roc_auc_gb = None
+        st.text(f"ROC-AUC : {roc_auc_gb:.3f}" if roc_auc_gb is not None else "ROC-AUC : N/A")
+        st.text("Classification Report :\n" + classification_report(y_eval, y_pred_gb))
